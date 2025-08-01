@@ -146,10 +146,6 @@ EOF
 print_status "Setting up React frontend..."
 cd $INSTALL_DIR/frontend/frontend_app
 
-# Clear npm cache and install dependencies
-print_status "Clearing npm cache..."
-$NPM_CMD cache clean --force
-
 # Use the correct Node.js path
 if [ -f "/usr/local/bin/node" ]; then
     NODE_CMD="/usr/local/bin/node"
@@ -158,6 +154,10 @@ else
     NODE_CMD="node"
     NPM_CMD="npm"
 fi
+
+# Clear npm cache and install dependencies
+print_status "Clearing npm cache..."
+$NPM_CMD cache clean --force
 
 # Check Node.js version
 print_status "Node.js version: $($NODE_CMD --version)"
