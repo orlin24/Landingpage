@@ -6,35 +6,37 @@ APP_DIR="/var/www/landingpage"
 DOMAIN="loopbotiq.com"
 GUNICORN_SERVICE="loopbotiq_backend"
 
-echo "🚀 Memulai instalasi untuk domain: $DOMAIN"
+echo "🚀 Mulai instalasi Landingpage untuk domain: $DOMAIN"
 
-# Install dependensi dasar
+# Update & install dependensi
 sudo apt update && sudo apt upgrade -y
-sudo apt install unzip curl nginx python3 python3-venv python3-pip nodejs npm -y
+sudo apt install unzip curl nginx python3 python3-venv python3-pip nodejs npm certbot python3-certbot-nginx -y
+
+# Install pnpm
 npm install -g pnpm
 
-# Unduh dan ekstrak repo
+# Download project
 cd /tmp
 curl -L $REPO_ZIP -o landingpage.zip
 unzip -o landingpage.zip
 rm -rf $APP_DIR
 mv Landingpage-main $APP_DIR
 
-# --- SETUP BACKEND ---
+# ------------------- BACKEND -------------------
+echo "⚙️ Setup backend..."
 cd $APP_DIR/backend/backend_app
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
 if [ -f "create_admin.py" ]; then
-    echo "🔐 Membuat admin user..."
     python create_admin.py
 fi
 
-# Buat service Gunicorn
+# Buat Gunicorn service
 sudo tee /etc/systemd/system/$GUNICORN_SERVICE.service > /dev/null <<EOF
 [Unit]
-Description=Gunicorn untuk Backend LoopBOTIQ
+Description=Gunicorn untuk LoopBOTIQ Backend
 After=network.target
 
 [Service]
@@ -50,9 +52,10 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable $GUNICORN_SERVICE
-sudo systemctl start $GUNICORN_SERVICE
+sudo systemctl restart $GUNICORN_SERVICE
 
-# --- SETUP FRONTEND ---
+# ------------------- FRONTEND -------------------
+echo "⚙️ Setup frontend..."
 cd $APP_DIR/frontend/frontend_app
 pnpm install
 pnpm run build
@@ -60,9 +63,8 @@ pnpm run build
 sudo mkdir -p /var/www/loopbotiq_frontend
 sudo cp -r dist/* /var/www/loopbotiq_frontend/
 
-# --- NGINX CONFIG ---
-echo "🌍 Membuat konfigurasi Nginx untuk domain $DOMAIN..."
-
+# ------------------- NGINX -------------------
+echo "🌐 Konfigurasi Nginx..."
 sudo tee /etc/nginx/sites-available/loopbotiq > /dev/null <<EOF
 server {
     listen 80;
@@ -87,9 +89,13 @@ server {
 }
 EOF
 
-# Aktifkan konfigurasi Nginx
+# Aktifkan konfigurasi
 sudo ln -sf /etc/nginx/sites-available/loopbotiq /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
-echo "✅ INSTALASI SELESAI!"
-echo "🔗 Website dapat diakses di: http://$DOMAIN"
+# ------------------- SSL -------------------
+echo "🔐 Mendapatkan SSL dari Let's Encrypt..."
+sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN
+
+echo "✅ Selesai!"
+echo "🔗 Website kamu tersedia di: https://$DOMAIN"
