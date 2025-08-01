@@ -62,6 +62,7 @@ pnpm run build
 
 sudo mkdir -p /var/www/loopbotiq_frontend
 sudo cp -r dist/* /var/www/loopbotiq_frontend/
+sudo chown -R www-data:www-data /var/www/loopbotiq_frontend
 
 # ------------------- NGINX -------------------
 echo "🌐 Konfigurasi Nginx..."
@@ -91,7 +92,14 @@ EOF
 
 # Aktifkan konfigurasi
 sudo ln -sf /etc/nginx/sites-available/loopbotiq /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
+
+# Restart backend service jika sudah ada
+if sudo systemctl is-active --quiet $GUNICORN_SERVICE; then
+    echo "🔄 Restart backend service..."
+    sudo systemctl restart $GUNICORN_SERVICE
+fi
 
 # ------------------- SSL -------------------
 echo "🔐 Mendapatkan SSL dari Let's Encrypt..."
