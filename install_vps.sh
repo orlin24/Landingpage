@@ -47,7 +47,39 @@ apt update && apt upgrade -y
 
 # Install required packages
 print_status "Installing required packages..."
-apt install -y nginx python3 python3-pip python3-venv nodejs npm unzip curl wget git ufw
+apt install -y nginx python3 python3-pip python3-venv unzip curl wget git ufw
+
+# Remove old Node.js and install Node.js 18 LTS
+print_status "Removing old Node.js..."
+apt remove -y nodejs npm
+apt autoremove -y
+
+print_status "Installing Node.js 18 LTS..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
+
+# Verify Node.js version
+NODE_VERSION=$(node --version)
+print_status "Installed Node.js version: $NODE_VERSION"
+
+if [[ "$NODE_VERSION" < "v18" ]]; then
+    print_error "Node.js version is still < 18. Manual installation required."
+    print_status "Installing Node.js 18 via NodeSource binary..."
+    
+    # Download and install Node.js 18 binary
+    cd /tmp
+    wget https://nodejs.org/dist/v18.20.4/node-v18.20.4-linux-x64.tar.xz
+    tar -xf node-v18.20.4-linux-x64.tar.xz
+    cp -r node-v18.20.4-linux-x64/* /usr/local/
+    
+    # Update PATH
+    echo 'export PATH="/usr/local/bin:$PATH"' >> /etc/environment
+    export PATH="/usr/local/bin:$PATH"
+    
+    # Verify again
+    NODE_VERSION=$(/usr/local/bin/node --version)
+    print_status "Final Node.js version: $NODE_VERSION"
+fi
 
 # Configure firewall
 print_status "Configuring firewall..."
@@ -114,11 +146,30 @@ EOF
 print_status "Setting up React frontend..."
 cd $INSTALL_DIR/frontend/frontend_app
 
-# Install Node.js dependencies
-npm install
+# Clear npm cache and install dependencies
+print_status "Clearing npm cache..."
+$NPM_CMD cache clean --force
+
+# Use the correct Node.js path
+if [ -f "/usr/local/bin/node" ]; then
+    NODE_CMD="/usr/local/bin/node"
+    NPM_CMD="/usr/local/bin/npm"
+else
+    NODE_CMD="node"
+    NPM_CMD="npm"
+fi
+
+# Check Node.js version
+print_status "Node.js version: $($NODE_CMD --version)"
+print_status "npm version: $($NPM_CMD --version)"
+
+# Install Node.js dependencies with legacy peer deps flag
+print_status "Installing frontend dependencies..."
+$NPM_CMD install --legacy-peer-deps --no-audit --no-fund
 
 # Build production version
-npm run build
+print_status "Building React production..."
+$NPM_CMD run build
 
 # Set correct permissions
 print_status "Setting file permissions..."
