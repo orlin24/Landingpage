@@ -12,13 +12,13 @@ from src.main import app
 def create_default_admin():
     with app.app_context():
         # Check if admin already exists
-        existing_admin = Admin.query.filter_by(username='admin').first()
+        existing_admin = Admin.query.filter_by(username='joss').first()
         if not existing_admin:
-            admin = Admin(username='admin')
-            admin.set_password('admin123')
+            admin = Admin(username='joss')
+            admin.set_password('24ciumdulu#*')
             db.session.add(admin)
             db.session.commit()
-            print('✅ Default admin created: username=admin, password=admin123')
+            print('✅ Default admin created: username=joss, password=24ciumdulu#*')
         else:
             print('⚠️ Admin already exists')
 
