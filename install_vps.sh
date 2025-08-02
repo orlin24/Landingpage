@@ -176,7 +176,20 @@ nginx -t && systemctl reload nginx
 # === SSL (Optional) ===
 echo "[INFO] Installing SSL with Certbot..."
 apt install -y certbot python3-certbot-nginx
-certbot --nginx --non-interactive --agree-tos -m admin@$DOMAIN -d $DOMAIN
+
+# Check if SSL already exists or skip due to rate limit
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "[INFO] SSL certificate already exists, skipping..."
+else
+    echo "[WARNING] SSL setup - checking rate limits..."
+    echo "[INFO] Attempting SSL certificate generation..."
+    if ! certbot --nginx --non-interactive --agree-tos -m admin@$DOMAIN -d $DOMAIN; then
+        echo "[WARNING] SSL certificate generation failed (likely rate limit)"
+        echo "[INFO] Website will run on HTTP for now"
+        echo "[INFO] You can manually run SSL setup later with:"
+        echo "      certbot --nginx -d $DOMAIN"
+    fi
+fi
 
 # === STATUS CHECK ===
 echo "[INFO] Checking services status..."
