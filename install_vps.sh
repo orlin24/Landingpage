@@ -97,12 +97,30 @@ apt install -y nodejs
 # Install pnpm
 npm install -g pnpm
 
-echo "[INFO] Building frontend locally on VPS..."
+# Set memory for build process
+export NODE_OPTIONS="--max-old-space-size=4096"
+
+echo "[INFO] Building frontend fresh on VPS with latest changes..."
 cd "$APP_DIR/frontend/frontend_app"
 
-# Simple install and build (following README exactly)
+# Clean build untuk ensure fresh build dengan latest changes
+echo "[INFO] Cleaning previous build artifacts..."
+rm -rf node_modules dist package-lock.json pnpm-lock.yaml 2>/dev/null || true
+
+# Fresh install and build
+echo "[INFO] Fresh install dependencies..."
 pnpm install
+
+echo "[INFO] Building production bundle with all latest optimizations..."
 pnpm run build
+
+# Verify build success
+if [ ! -d "dist" ]; then
+    echo "[ERROR] Build failed - dist directory not created"
+    exit 1
+fi
+
+echo "[SUCCESS] Frontend built successfully with latest changes"
 
 # === DEPLOY BUILT FILES (Following README exactly) ===
 echo "[INFO] Deploying built files..."
