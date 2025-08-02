@@ -12,12 +12,22 @@ echo "[INFO] Starting deployment to $DOMAIN"
 
 # === SYSTEM UPDATE ===
 apt update && apt upgrade -y
-apt install -y python3 python3-pip python3-venv nginx git curl build-essential ufw
+apt install -y python3 python3-pip python3-venv python3-setuptools python3-dev nginx git curl build-essential ufw
 
-echo "[INFO] Installing Node.js & pnpm..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+# === CREATE SWAP FOR BUILD ===
+echo "[INFO] Creating swap file for build process..."
+if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+echo "[INFO] Installing Node.js 20.x & pnpm..."
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
-npm install -g pnpm
+npm install -g pnpm@latest
 
 # === FIREWALL ===
 ufw allow OpenSSH
@@ -107,12 +117,36 @@ systemctl enable $BACKEND_SERVICE
 systemctl restart $BACKEND_SERVICE
 
 # === FRONTEND BUILD ===
+echo "[INFO] Building frontend..."
 cd "$APP_DIR/frontend/frontend_app"
-pnpm install
+
+# Set Node.js memory limit
+export NODE_OPTIONS="--max-old-space-size=4096"
+
+# Clear cache and install with frozen lockfile
+echo "[INFO] Installing frontend dependencies..."
+pnpm store prune
+pnpm install --frozen-lockfile
+
+# Install terser for vite build optimization
+pnpm add -D terser
+
+echo "[INFO] Building production bundle..."
 pnpm run build
 
+# Verify build output
+if [ ! -d "dist" ]; then
+    echo "[ERROR] Frontend build failed - dist directory not found"
+    exit 1
+fi
+
+echo "[INFO] Copying build files to web directory..."
 mkdir -p /var/www/$DOMAIN
 cp -r dist/* /var/www/$DOMAIN/
+
+# Set proper permissions
+chown -R www-data:www-data /var/www/$DOMAIN
+chmod -R 755 /var/www/$DOMAIN
 
 # === NGINX CONFIG ===
 echo "[INFO] Configuring Nginx..."
