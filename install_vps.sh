@@ -183,11 +183,16 @@ if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
 else
     echo "[WARNING] SSL setup - checking rate limits..."
     echo "[INFO] Attempting SSL certificate generation..."
-    if ! certbot --nginx --non-interactive --agree-tos -m admin@$DOMAIN -d $DOMAIN; then
-        echo "[WARNING] SSL certificate generation failed (likely rate limit)"
+    # Use timeout untuk avoid hanging on interactive prompts
+    if timeout 60 certbot --nginx --non-interactive --agree-tos --email admin@$DOMAIN -d $DOMAIN 2>/dev/null; then
+        echo "[SUCCESS] SSL certificate installed successfully"
+    else
+        echo "[WARNING] SSL certificate generation failed (likely rate limit or timeout)"
         echo "[INFO] Website will run on HTTP for now"
         echo "[INFO] You can manually run SSL setup later with:"
-        echo "      certbot --nginx -d $DOMAIN"
+        echo "      certbot --nginx --email admin@$DOMAIN -d $DOMAIN"
+        echo "[INFO] Or skip email registration:"
+        echo "      certbot --nginx --register-unsafely-without-email -d $DOMAIN"
     fi
 fi
 
