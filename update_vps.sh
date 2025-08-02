@@ -155,14 +155,17 @@ case $UPDATE_TYPE in
             rm -rf node_modules dist package-lock.json pnpm-lock.yaml 2>/dev/null || true
         fi
         
-        # Check if node_modules exists
-        if [ ! -d "node_modules" ] || [ "$UPDATE_TYPE" = "clean" ]; then
-            print_info "Installing dependencies..."
-            pnpm install
-            pnpm add -D terser
-        else
-            print_info "Dependencies already installed, skipping..."
-        fi
+        # Always clean install untuk avoid version conflicts
+        print_info "Cleaning and installing dependencies..."
+        rm -rf node_modules package-lock.json pnpm-lock.yaml 2>/dev/null || true
+        
+        # Fresh install with latest versions
+        pnpm install
+        pnpm add -D terser
+        
+        # Force rebuild esbuild untuk fix version mismatch
+        print_info "Rebuilding esbuild to fix version conflicts..."
+        pnpm rebuild esbuild
         
         # Build frontend
         print_info "Building frontend..."

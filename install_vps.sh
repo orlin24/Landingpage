@@ -115,6 +115,10 @@ pnpm install
 echo "[INFO] Installing terser for Vite build optimization..."
 pnpm add -D terser
 
+# Force rebuild esbuild untuk fix version conflicts
+echo "[INFO] Rebuilding esbuild to fix version mismatch..."
+pnpm rebuild esbuild
+
 echo "[INFO] Building production bundle with all latest optimizations..."
 pnpm run build
 
