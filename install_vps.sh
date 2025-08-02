@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Force output flushing untuk debugging
+exec > >(tee -a /tmp/install.log)
+exec 2>&1
+
 # === CONFIG ===
 DOMAIN="loopbotiq.com"
 REPO="https://github.com/orlin24/Landingpage"
@@ -129,49 +133,67 @@ cd "$APP_DIR/frontend/frontend_app"
 # Set Node.js memory limit
 export NODE_OPTIONS="--max-old-space-size=4096"
 
-# Clear cache and install dependencies
-echo "[INFO] Installing frontend dependencies..."
-pnpm store prune
-
-# Force install tanpa prompt, ignore scripts warnings
-echo "[INFO] Installing with ignore scripts (bypassing build script warnings)..."
+# Alternative: Skip pnpm completely dan use npm untuk avoid hanging
+echo "[INFO] Installing frontend dependencies with npm (bypassing pnpm issues)..."
 echo "[INFO] This may take a few minutes, please wait..."
 
-# Add timeout to prevent hanging
-timeout 600 pnpm install --ignore-scripts --frozen-lockfile || {
-    echo "[WARNING] PNPM installation failed/timed out, trying with npm..."
-    
-    # Fallback to npm if pnpm fails
-    echo "[INFO] Installing dependencies with npm..."
-    npm install --no-audit --no-fund || {
-        echo "[ERROR] Both pnpm and npm installation failed"
-        exit 1
-    }
-    
-    echo "[INFO] Installing terser with npm..."
-    npm install --save-dev terser
-    USE_NPM=true
+# Clear any existing node_modules
+rm -rf node_modules package-lock.json pnpm-lock.yaml 2>/dev/null || true
+
+# Use npm directly to avoid pnpm hanging issues
+echo "[DEBUG] Starting npm install..."
+npm install --no-audit --no-fund --legacy-peer-deps || {
+    echo "[ERROR] npm installation failed"
+    exit 1
 }
 
+echo "[INFO] Installing terser for build optimization..."
+npm install --save-dev terser
+
+USE_NPM=true
+echo "[SUCCESS] npm installation completed successfully"
+echo "[DEBUG] Continuing to next step..."
+
 if [ "$USE_NPM" != "true" ]; then
+    echo "[DEBUG] Installing terser with pnpm..."
     echo "[INFO] Installing terser for build optimization..."
     pnpm add -D terser --ignore-scripts
+    echo "[DEBUG] Terser installation completed"
 fi
 
 # Manual rebuild critical packages yang dibutuhkan untuk build
+echo "[DEBUG] Starting rebuild critical packages..."
 echo "[INFO] Rebuilding critical packages..."
-pnpm rebuild esbuild 2>/dev/null || echo "[WARNING] esbuild rebuild failed, continuing..."
-pnpm rebuild @tailwindcss/oxide 2>/dev/null || echo "[WARNING] tailwindcss rebuild failed, continuing..."
 
-# Force approve builds untuk menghindari interactive prompt
-echo "[INFO] Force approving build scripts..."
-yes | pnpm approve-builds @tailwindcss/oxide esbuild 2>/dev/null || echo "[INFO] Build scripts approval skipped"
+if [ "$USE_NPM" != "true" ]; then
+    pnpm rebuild esbuild 2>/dev/null || echo "[WARNING] esbuild rebuild failed, continuing..."
+    pnpm rebuild @tailwindcss/oxide 2>/dev/null || echo "[WARNING] tailwindcss rebuild failed, continuing..."
+    
+    # Force approve builds untuk menghindari interactive prompt
+    echo "[DEBUG] Starting build scripts approval..."
+    echo "[INFO] Force approving build scripts..."
+    timeout 30 bash -c 'yes | pnpm approve-builds @tailwindcss/oxide esbuild' 2>/dev/null || echo "[INFO] Build scripts approval skipped"
+    echo "[DEBUG] Build scripts approval completed"
+else
+    echo "[INFO] Using npm, skipping pnpm-specific rebuilds"
+fi
 
+echo "[DEBUG] All preparation steps completed, moving to build..."
+
+echo "[DEBUG] Starting build process..."
 echo "[INFO] Building production bundle..."
+
 # Set environment variables dan build
-NODE_ENV=production
+export NODE_ENV=production
+export NODE_OPTIONS="--max-old-space-size=4096"
+
+echo "[DEBUG] Environment set - NODE_ENV=$NODE_ENV"
+echo "[DEBUG] Current directory: $(pwd)"
+echo "[DEBUG] Available scripts:"
+ls -la package.json 2>/dev/null && cat package.json | grep -A 10 '"scripts"' || echo "No package.json found"
 
 if [ "$USE_NPM" = "true" ]; then
+    echo "[DEBUG] Using npm for build..."
     echo "[INFO] Building with npm..."
     npm run build || {
         echo "[WARNING] npm build failed, trying direct vite..."
@@ -180,7 +202,9 @@ if [ "$USE_NPM" = "true" ]; then
             exit 1
         }
     }
+    echo "[DEBUG] npm build completed successfully"
 else
+    echo "[DEBUG] Using pnpm for build..."
     echo "[INFO] Building with pnpm..."
     pnpm run build || {
         echo "[WARNING] pnpm build failed, trying alternative methods..."
@@ -196,7 +220,10 @@ else
             }
         }
     }
+    echo "[DEBUG] pnpm build completed successfully"
 fi
+
+echo "[DEBUG] Build process finished, checking output..."
 
 # Verify build output
 if [ ! -d "dist" ]; then
