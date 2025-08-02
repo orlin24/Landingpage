@@ -29,9 +29,45 @@ LoopBOTIQ is a comprehensive project designed to automate YouTube Live Streams w
 
 ## 3. VPS Deployment
 
-### Backend (Flask)
+### Automated Deployment
 
-### Frontend (React)
+For complete automated deployment on Ubuntu 22.04:
+
+```bash
+# Download and run installer
+curl -fsSL https://raw.githubusercontent.com/orlin24/Landingpage/refs/heads/main/install_vps.sh | bash
+```
+
+This will automatically:
+- Install all system dependencies (Node.js, Python, Nginx)
+- Setup backend with Gunicorn service
+- Build and deploy frontend with optimizations
+- Configure Nginx with SSL (if rate limits allow)
+- Complete production deployment
+
+### Update Workflow
+
+After initial deployment, for updates:
+
+```bash
+# Download update manager
+curl -o /root/update.sh https://raw.githubusercontent.com/orlin24/Landingpage/refs/heads/main/update_vps.sh
+chmod +x /root/update.sh
+
+# Run updates
+/root/update.sh
+```
+
+Choose from update options:
+1. Frontend Only (for UI changes)
+2. Backend Only (for API changes)
+3. Full Update (both frontend + backend)
+4. Git Pull Only (check changes)
+5. Force Clean Build (troubleshooting)
+
+### Manual Deployment (Advanced)
+
+### Backend (Flask)
 
 ## 4. Admin Panel Usage
 
