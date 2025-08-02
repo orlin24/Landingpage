@@ -1,0 +1,28 @@
+{
+  "name": "LoopBOTIQ - Sistem Otomatis YouTube",
+  "short_name": "LoopBOTIQ",
+  "description": "Ratusan juta/bulan tanpa buat konten dengan LoopBot & LoopStream",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png", 
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

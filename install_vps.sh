@@ -1,338 +1,151 @@
 #!/bin/bash
-
-# LoopBOTIQ Auto Installer Script
-# Auto installer untuk VPS Ubuntu/Debian
-# Repository: https://github.com/orlin24/Landingpage
-
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# === CONFIG ===
+DOMAIN="loopbotiq.com"
+REPO="https://github.com/orlin24/Landingpage"
+APP_DIR="/var/www/loopbotiq"
+BACKEND_SERVICE="loopbotiq_backend"
+USER_NAME="root"  # Ganti jika VPS kamu pakai user lain
 
-# Configuration
-REPO_URL="https://github.com/orlin24/Landingpage.git"
-PROJECT_DIR="/var/www/loopbotiq"
-BACKEND_PORT="5000"
-FRONTEND_PORT="3000"
-NGINX_DOMAIN="${1:-localhost}"
+echo "[INFO] Starting deployment to $DOMAIN"
 
-# Functions
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+# === SYSTEM UPDATE ===
+apt update && apt upgrade -y
+apt install -y python3 python3-pip python3-venv nginx git curl build-essential ufw
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
+echo "[INFO] Installing Node.js & pnpm..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
+npm install -g pnpm
 
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+# === FIREWALL ===
+ufw allow OpenSSH
+ufw allow 'Nginx Full'
+ufw --force enable
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# === CLONE PROJECT ===
+echo "[INFO] Cloning repo..."
+rm -rf "$APP_DIR"
+git clone "$REPO" "$APP_DIR"
 
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        print_error "Script ini harus dijalankan sebagai root (gunakan sudo)"
-        exit 1
-    fi
-}
+# === BACKEND SETUP ===
+cd "$APP_DIR/backend/backend_app"
+python3 -m venv venv
+source venv/bin/activate
 
-update_system() {
-    print_status "Updating system packages..."
-    apt update && apt upgrade -y
-    print_success "System updated successfully"
-}
-
-install_dependencies() {
-    print_status "Installing system dependencies..."
-    
-    # Install basic tools
-    apt install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsb-release
-    
-    # Install Python and pip
-    apt install -y python3 python3-pip python3-venv python3-dev
-    
-    # Install Node.js 20.x
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt install -y nodejs
-    
-    # Install pnpm
-    npm install -g pnpm
-    
-    # Install Nginx
-    apt install -y nginx
-    
-    # Install supervisor for process management
-    apt install -y supervisor
-    
-    print_success "Dependencies installed successfully"
-}
-
-clone_repository() {
-    print_status "Cloning repository..."
-    
-    if [ -d "$PROJECT_DIR" ]; then
-        print_warning "Project directory exists, removing..."
-        rm -rf "$PROJECT_DIR"
-    fi
-    
-    mkdir -p "$PROJECT_DIR"
-    git clone "$REPO_URL" "$PROJECT_DIR"
-    cd "$PROJECT_DIR"
-    
-    print_success "Repository cloned successfully"
-}
-
-setup_backend() {
-    print_status "Setting up backend..."
-    
-    cd "$PROJECT_DIR/backend/backend_app"
-    
-    # Create virtual environment
-    python3 -m venv venv
-    source venv/bin/activate
-    
-    # Install Python dependencies
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    pip install gunicorn
-    
-    # Create admin user
-    python3 create_admin.py
-    
-    print_success "Backend setup completed"
-}
-
-setup_frontend() {
-    print_status "Setting up frontend..."
-    
-    cd "$PROJECT_DIR/frontend/frontend_app"
-    
-    # Install dependencies
-    pnpm install
-    
-    # Build for production
-    pnpm build
-    
-    print_success "Frontend setup completed"
-}
-
-setup_supervisor() {
-    print_status "Setting up supervisor for backend service..."
-    
-    cat > /etc/supervisor/conf.d/loopbotiq-backend.conf << EOF
-[program:loopbotiq-backend]
-command=$PROJECT_DIR/backend/backend_app/venv/bin/gunicorn --bind 127.0.0.1:$BACKEND_PORT --workers 3 src.main:app
-directory=$PROJECT_DIR/backend/backend_app
-user=www-data
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=/var/log/loopbotiq-backend.log
-environment=FLASK_ENV=production
+echo "[INFO] Installing Python dependencies..."
+cat > requirements.txt <<EOF
+blinker==1.8.2
+click==8.1.8
+Flask==3.0.3
+flask-cors==5.0.0
+Flask-SQLAlchemy==3.1.1
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==2.1.5
+SQLAlchemy==2.0.41
+typing_extensions==4.13.2
+Werkzeug==3.0.6
 EOF
 
-    supervisorctl reread
-    supervisorctl update
-    supervisorctl start loopbotiq-backend
-    
-    print_success "Supervisor configured and backend service started"
-}
+pip install --upgrade pip
+pip install gunicorn
+pip install -r requirements.txt
 
-setup_nginx() {
-    print_status "Setting up Nginx..."
-    
-    # Remove default site
-    rm -f /etc/nginx/sites-enabled/default
-    
-    # Create new site configuration
-    cat > /etc/nginx/sites-available/loopbotiq << EOF
+# === CREATE DEFAULT ADMIN ===
+echo "[INFO] Creating default admin..."
+cat > create_admin.py <<EOF
+#!/usr/bin/env python3
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src.models.admin import Admin
+from src.models.user import db
+from src.main import app
+
+def create_default_admin():
+    with app.app_context():
+        existing_admin = Admin.query.filter_by(username='joss').first()
+        if not existing_admin:
+            admin = Admin(username='joss')
+            admin.set_password('24ciumdulu#*')
+            db.session.add(admin)
+            db.session.commit()
+            print('✅ Default admin created: joss / 24ciumdulu#*')
+        else:
+            print('⚠️ Admin already exists')
+
+if __name__ == '__main__':
+    create_default_admin()
+EOF
+
+python3 create_admin.py
+
+# === GUNICORN SYSTEMD SERVICE ===
+echo "[INFO] Creating Gunicorn service..."
+cat > /etc/systemd/system/$BACKEND_SERVICE.service <<EOF
+[Unit]
+Description=Gunicorn for LoopBOTIQ backend
+After=network.target
+
+[Service]
+User=$USER_NAME
+Group=www-data
+WorkingDirectory=$APP_DIR/backend/backend_app
+ExecStart=$APP_DIR/backend/backend_app/venv/bin/gunicorn --workers 3 --bind unix:$APP_DIR/backend/backend_app/$BACKEND_SERVICE.sock src.main:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable $BACKEND_SERVICE
+systemctl restart $BACKEND_SERVICE
+
+# === FRONTEND BUILD ===
+cd "$APP_DIR/frontend/frontend_app"
+pnpm install
+pnpm run build
+
+mkdir -p /var/www/$DOMAIN
+cp -r dist/* /var/www/$DOMAIN/
+
+# === NGINX CONFIG ===
+echo "[INFO] Configuring Nginx..."
+cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
-    server_name $NGINX_DOMAIN;
-    
-    # Frontend (React App)
+    server_name $DOMAIN;
+
+    root /var/www/$DOMAIN;
+    index index.html;
+
     location / {
-        root $PROJECT_DIR/frontend/frontend_app/dist;
-        index index.html;
         try_files \$uri \$uri/ /index.html;
-        
-        # Cache static assets
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
     }
-    
-    # Backend API
-    location /api/ {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        # CORS headers
-        add_header Access-Control-Allow-Origin *;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
-        add_header Access-Control-Allow-Headers "Content-Type, Authorization";
-        
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
+
+    location /api {
+        include proxy_params;
+        proxy_pass http://unix:$APP_DIR/backend/backend_app/$BACKEND_SERVICE.sock;
     }
-    
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_types
-        text/plain
-        text/css
-        text/xml
-        text/javascript
-        application/json
-        application/javascript
-        application/xml+rss
-        application/atom+xml
-        image/svg+xml;
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+        expires 1y;
+        add_header Cache-Control "public, no-transform";
+    }
 }
 EOF
 
-    # Enable site
-    ln -s /etc/nginx/sites-available/loopbotiq /etc/nginx/sites-enabled/
-    
-    # Test and reload Nginx
-    nginx -t
-    systemctl reload nginx
-    
-    print_success "Nginx configured successfully"
-}
+ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
 
-setup_firewall() {
-    print_status "Configuring firewall..."
-    
-    # Install ufw if not installed
-    apt install -y ufw
-    
-    # Configure firewall
-    ufw --force reset
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh
-    ufw allow 'Nginx Full'
-    ufw --force enable
-    
-    print_success "Firewall configured"
-}
+# === SSL ===
+echo "[INFO] Installing SSL with Certbot..."
+apt install -y certbot python3-certbot-nginx
+certbot --nginx --non-interactive --agree-tos -m admin@$DOMAIN -d $DOMAIN
 
-setup_ssl() {
-    if [ "$NGINX_DOMAIN" != "localhost" ] && [ "$NGINX_DOMAIN" != "127.0.0.1" ]; then
-        print_status "Setting up SSL with Let's Encrypt..."
-        
-        # Install certbot
-        apt install -y certbot python3-certbot-nginx
-        
-        # Get SSL certificate
-        certbot --nginx -d "$NGINX_DOMAIN" --non-interactive --agree-tos --email admin@"$NGINX_DOMAIN"
-        
-        # Setup auto-renewal
-        echo "0 12 * * * /usr/bin/certbot renew --quiet" | crontab -
-        
-        print_success "SSL configured successfully"
-    else
-        print_warning "Skipping SSL setup for localhost/IP address"
-    fi
-}
-
-create_startup_script() {
-    print_status "Creating startup script..."
-    
-    cat > /usr/local/bin/loopbotiq-start << 'EOF'
-#!/bin/bash
-supervisorctl start loopbotiq-backend
-systemctl start nginx
-echo "LoopBOTIQ services started"
-EOF
-
-    cat > /usr/local/bin/loopbotiq-stop << 'EOF'
-#!/bin/bash
-supervisorctl stop loopbotiq-backend
-systemctl stop nginx
-echo "LoopBOTIQ services stopped"
-EOF
-
-    cat > /usr/local/bin/loopbotiq-restart << 'EOF'
-#!/bin/bash
-supervisorctl restart loopbotiq-backend
-systemctl restart nginx
-echo "LoopBOTIQ services restarted"
-EOF
-
-    chmod +x /usr/local/bin/loopbotiq-*
-    
-    print_success "Startup scripts created"
-}
-
-show_summary() {
-    echo ""
-    echo "================================"
-    print_success "INSTALASI SELESAI!"
-    echo "================================"
-    echo ""
-    echo "Informasi Akses:"
-    echo "- Frontend URL: http://$NGINX_DOMAIN"
-    echo "- Backend API: http://$NGINX_DOMAIN/api/"
-    echo "- Project Directory: $PROJECT_DIR"
-    echo ""
-    echo "Service Management:"
-    echo "- Start services: loopbotiq-start"
-    echo "- Stop services: loopbotiq-stop"
-    echo "- Restart services: loopbotiq-restart"
-    echo ""
-    echo "Log Files:"
-    echo "- Backend: /var/log/loopbotiq-backend.log"
-    echo "- Nginx: /var/log/nginx/access.log"
-    echo "- Nginx Error: /var/log/nginx/error.log"
-    echo ""
-    echo "Manual Service Commands:"
-    echo "- Backend: supervisorctl status loopbotiq-backend"
-    echo "- Nginx: systemctl status nginx"
-    echo ""
-    if [ "$NGINX_DOMAIN" != "localhost" ] && [ "$NGINX_DOMAIN" != "127.0.0.1" ]; then
-        echo "SSL Certificate: Configured for $NGINX_DOMAIN"
-    fi
-    echo "================================"
-}
-
-# Main installation process
-main() {
-    print_status "Starting LoopBOTIQ Auto Installer..."
-    echo "Domain/IP: $NGINX_DOMAIN"
-    echo ""
-    
-    check_root
-    update_system
-    install_dependencies
-    clone_repository
-    setup_backend
-    setup_frontend
-    setup_supervisor
-    setup_nginx
-    setup_firewall
-    setup_ssl
-    create_startup_script
-    show_summary
-}
-
-# Run installation
-main "$@"
+echo "[DONE] LoopBOTIQ deployed successfully at https://$DOMAIN"
