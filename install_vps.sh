@@ -111,6 +111,10 @@ rm -rf node_modules dist package-lock.json pnpm-lock.yaml 2>/dev/null || true
 echo "[INFO] Fresh install dependencies..."
 pnpm install
 
+# Install terser yang dibutuhkan Vite v6.3.5
+echo "[INFO] Installing terser for Vite build optimization..."
+pnpm add -D terser
+
 echo "[INFO] Building production bundle with all latest optimizations..."
 pnpm run build
 
