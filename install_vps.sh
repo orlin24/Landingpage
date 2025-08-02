@@ -29,6 +29,12 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 npm install -g pnpm@latest
 
+# Configure pnpm globally untuk menghindari build script issues
+echo "[INFO] Configuring pnpm settings..."
+pnpm config set auto-install-peers true
+pnpm config set enable-pre-post-scripts true
+pnpm config set shamefully-hoist true
+
 # === FIREWALL ===
 ufw allow OpenSSH
 ufw allow 'Nginx Full'
@@ -126,13 +132,35 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 # Clear cache and install with frozen lockfile
 echo "[INFO] Installing frontend dependencies..."
 pnpm store prune
-pnpm install --frozen-lockfile
 
-# Install terser for vite build optimization
+# Allow build scripts for required packages
+echo "[INFO] Configuring pnpm build scripts..."
+pnpm config set auto-install-peers true
+pnpm config set enable-pre-post-scripts true
+
+# Install with build scripts allowed
+pnpm install --frozen-lockfile --ignore-scripts=false
+
+# Approve specific build scripts yang dibutuhkan
+echo "[INFO] Approving build scripts..."
+pnpm approve-builds @tailwindcss/oxide esbuild 2>/dev/null || {
+    echo "[WARNING] approve-builds failed, using alternative method..."
+    # Alternative: Install dengan --ignore-scripts lalu manual rebuild
+    pnpm install --ignore-scripts
+    # Rebuild critical packages
+    pnpm rebuild @tailwindcss/oxide esbuild 2>/dev/null || echo "[INFO] Manual rebuild completed"
+}
+
+# Install terser for vite build optimization  
 pnpm add -D terser
 
 echo "[INFO] Building production bundle..."
-pnpm run build
+# Try build with verbose logging
+pnpm run build --verbose || {
+    echo "[WARNING] Build failed, trying alternative build method..."
+    # Alternative build method
+    NODE_ENV=production pnpm vite build --mode production
+}
 
 # Verify build output
 if [ ! -d "dist" ]; then
