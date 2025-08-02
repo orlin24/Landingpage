@@ -129,38 +129,74 @@ cd "$APP_DIR/frontend/frontend_app"
 # Set Node.js memory limit
 export NODE_OPTIONS="--max-old-space-size=4096"
 
-# Clear cache and install with frozen lockfile
+# Clear cache and install dependencies
 echo "[INFO] Installing frontend dependencies..."
 pnpm store prune
 
-# Allow build scripts for required packages
-echo "[INFO] Configuring pnpm build scripts..."
-pnpm config set auto-install-peers true
-pnpm config set enable-pre-post-scripts true
+# Force install tanpa prompt, ignore scripts warnings
+echo "[INFO] Installing with ignore scripts (bypassing build script warnings)..."
+echo "[INFO] This may take a few minutes, please wait..."
 
-# Install with build scripts allowed
-pnpm install --frozen-lockfile --ignore-scripts=false
-
-# Approve specific build scripts yang dibutuhkan
-echo "[INFO] Approving build scripts..."
-pnpm approve-builds @tailwindcss/oxide esbuild 2>/dev/null || {
-    echo "[WARNING] approve-builds failed, using alternative method..."
-    # Alternative: Install dengan --ignore-scripts lalu manual rebuild
-    pnpm install --ignore-scripts
-    # Rebuild critical packages
-    pnpm rebuild @tailwindcss/oxide esbuild 2>/dev/null || echo "[INFO] Manual rebuild completed"
+# Add timeout to prevent hanging
+timeout 600 pnpm install --ignore-scripts --frozen-lockfile || {
+    echo "[WARNING] PNPM installation failed/timed out, trying with npm..."
+    
+    # Fallback to npm if pnpm fails
+    echo "[INFO] Installing dependencies with npm..."
+    npm install --no-audit --no-fund || {
+        echo "[ERROR] Both pnpm and npm installation failed"
+        exit 1
+    }
+    
+    echo "[INFO] Installing terser with npm..."
+    npm install --save-dev terser
+    USE_NPM=true
 }
 
-# Install terser for vite build optimization  
-pnpm add -D terser
+if [ "$USE_NPM" != "true" ]; then
+    echo "[INFO] Installing terser for build optimization..."
+    pnpm add -D terser --ignore-scripts
+fi
+
+# Manual rebuild critical packages yang dibutuhkan untuk build
+echo "[INFO] Rebuilding critical packages..."
+pnpm rebuild esbuild 2>/dev/null || echo "[WARNING] esbuild rebuild failed, continuing..."
+pnpm rebuild @tailwindcss/oxide 2>/dev/null || echo "[WARNING] tailwindcss rebuild failed, continuing..."
+
+# Force approve builds untuk menghindari interactive prompt
+echo "[INFO] Force approving build scripts..."
+yes | pnpm approve-builds @tailwindcss/oxide esbuild 2>/dev/null || echo "[INFO] Build scripts approval skipped"
 
 echo "[INFO] Building production bundle..."
-# Try build with verbose logging
-pnpm run build --verbose || {
-    echo "[WARNING] Build failed, trying alternative build method..."
-    # Alternative build method
-    NODE_ENV=production pnpm vite build --mode production
-}
+# Set environment variables dan build
+NODE_ENV=production
+
+if [ "$USE_NPM" = "true" ]; then
+    echo "[INFO] Building with npm..."
+    npm run build || {
+        echo "[WARNING] npm build failed, trying direct vite..."
+        npx vite build --mode production || {
+            echo "[ERROR] All build methods failed"
+            exit 1
+        }
+    }
+else
+    echo "[INFO] Building with pnpm..."
+    pnpm run build || {
+        echo "[WARNING] pnpm build failed, trying alternative methods..."
+        
+        # Try with npm instead of pnpm
+        echo "[INFO] Trying with npm fallback..."
+        npm run build 2>/dev/null || {
+            echo "[INFO] Trying direct vite build..."
+            # Direct vite build
+            npx vite build --mode production || {
+                echo "[ERROR] All build methods failed"
+                exit 1
+            }
+        }
+    }
+fi
 
 # Verify build output
 if [ ! -d "dist" ]; then
